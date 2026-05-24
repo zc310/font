@@ -6,6 +6,7 @@ import (
 	"math"
 	"sort"
 	"strconv"
+	"strings"
 
 	"github.com/tdewolff/parse/v2"
 )
@@ -853,7 +854,7 @@ type cffSubrIndexChange struct {
 }
 
 // updateSubrs changes all indices to local and global subroutines given the mappings for both
-func (cff *cffTable) updateSubrs(localSubrsMap, globalSubrsMap map[int32]int32, localSubrs, globalSubrs *cffINDEX) error {
+func (cff *cffTable) updateSubrs(localSubrsMap, globalSubrsMap map[int32]int32, localSubrs, globalSubrs *cffINDEX, localSubrsLen, globalSubrsLen int) error {
 	if 1 < len(cff.fonts.localSubrs) {
 		return fmt.Errorf("only single-font CFFs are supported")
 	} else if len(localSubrsMap) == 0 && len(globalSubrsMap) == 0 {
@@ -870,8 +871,8 @@ func (cff *cffTable) updateSubrs(localSubrsMap, globalSubrsMap map[int32]int32, 
 
 	localSubrsHandled := map[int32]bool{}  // old indices
 	globalSubrsHandled := map[int32]bool{} // old indices
-	localSubrsBias := int32(cffCharStringSubrsBias(localSubrs.Len()))
-	globalSubrsBias := int32(cffCharStringSubrsBias(globalSubrs.Len()))
+	localSubrsBias := int32(cffCharStringSubrsBias(localSubrsLen))
+	globalSubrsBias := int32(cffCharStringSubrsBias(globalSubrsLen))
 
 	indexChanges := map[*cffINDEX][]cffSubrIndexChange{}
 	var indexStack []*cffINDEX
@@ -1120,7 +1121,7 @@ func (cff *cffTable) ReindexSubrs() error {
 	}
 
 	// update subrs indices in charStrings for all glyphs and their subroutines
-	return cff.updateSubrs(localSubrsMap, globalSubrsMap, localSubrs, globalSubrs)
+	return cff.updateSubrs(localSubrsMap, globalSubrsMap, localSubrs, globalSubrs, localSubrs.Len(), globalSubrs.Len())
 }
 
 type cffINDEX struct {
@@ -1208,6 +1209,15 @@ func (t *cffINDEX) Extend(o *cffINDEX) {
 	}
 	t.offset = offset
 	t.data = append(t.data, o.data...)
+}
+
+func (t *cffINDEX) String() string {
+	sb := &strings.Builder{}
+	fmt.Fprintf(sb, "INDEX: offsets=%v len=%v\n", t.offset, len(t.data))
+	for i := 0; i+1 < len(t.offset); i++ {
+		fmt.Fprintf(sb, "%v: %v\n", i, t.data[t.offset[i]:t.offset[i+1]])
+	}
+	return sb.String()
 }
 
 func parseINDEX(r *parse.BinaryReader, isCFF2 bool) (*cffINDEX, error) {

@@ -51,6 +51,9 @@ func (cmd *Show) Run() error {
 			return fmt.Errorf("char must be one character")
 		}
 		cmd.GlyphID = sfnt.GlyphIndex(rs[0])
+		if cmd.GlyphID == 0 {
+			return fmt.Errorf("glyph not found: %v", printableRune(rs[0]))
+		}
 	} else if cmd.Unicode != "" {
 		codepoint, err := strconv.ParseInt(cmd.Unicode, 16, 32)
 		if err != nil {
@@ -60,7 +63,7 @@ func (cmd *Show) Run() error {
 		}
 		cmd.GlyphID = sfnt.GlyphIndex(rune(codepoint))
 		if cmd.GlyphID == 0 {
-			return fmt.Errorf("glyph not found for U+%4X\n", codepoint)
+			return fmt.Errorf("glyph not found: %v", printableRune(rune(codepoint)))
 		}
 	}
 	fmt.Println("GlyphID:", cmd.GlyphID)

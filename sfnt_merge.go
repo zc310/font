@@ -161,19 +161,19 @@ func (sfnt *SFNT) Merge(sfnt2 *SFNT, options MergeOptions) error {
 		localSubrs, localSubrs2 := &cffINDEX{}, &cffINDEX{}
 		globalSubrs, globalSubrs2 := &cffINDEX{}, &cffINDEX{}
 		if 0 < len(sfnt.CFF.fonts.localSubrs) && 0 < sfnt.CFF.fonts.localSubrs[0].Len() {
-			localSubrs = sfnt.CFF.fonts.localSubrs[0]
+			*localSubrs = *sfnt.CFF.fonts.localSubrs[0]
 			localSubrsLen += sfnt.CFF.fonts.localSubrs[0].Len()
 		}
 		if 0 < len(sfnt2.CFF.fonts.localSubrs) && 0 < sfnt2.CFF.fonts.localSubrs[0].Len() {
-			localSubrs2 = sfnt2.CFF.fonts.localSubrs[0]
+			*localSubrs2 = *sfnt2.CFF.fonts.localSubrs[0]
 			localSubrsLen += sfnt2.CFF.fonts.localSubrs[0].Len()
 		}
 		if 0 < sfnt.CFF.globalSubrs.Len() {
-			globalSubrs = sfnt.CFF.globalSubrs
+			*globalSubrs = *sfnt.CFF.globalSubrs
 			globalSubrsLen += sfnt.CFF.globalSubrs.Len()
 		}
 		if 0 < sfnt2.CFF.globalSubrs.Len() {
-			globalSubrs2 = sfnt2.CFF.globalSubrs
+			*globalSubrs2 = *sfnt2.CFF.globalSubrs
 			globalSubrsLen += sfnt2.CFF.globalSubrs.Len()
 		}
 
@@ -192,7 +192,8 @@ func (sfnt *SFNT) Merge(sfnt2 *SFNT, options MergeOptions) error {
 				globalSubrsMap[int32(i)] = int32(i)
 			}
 		}
-		if err := sfnt.CFF.updateSubrs(localSubrsMap, globalSubrsMap, localSubrs, globalSubrs); err != nil {
+
+		if err := sfnt.CFF.updateSubrs(localSubrsMap, globalSubrsMap, localSubrs, globalSubrs, localSubrsLen, globalSubrsLen); err != nil {
 			return err
 		}
 
@@ -231,9 +232,7 @@ func (sfnt *SFNT) Merge(sfnt2 *SFNT, options MergeOptions) error {
 		}
 
 		// update subroutine indices for merging font
-		localSubrs.Extend(localSubrs2)
-		globalSubrs.Extend(globalSubrs2)
-		if err := cff2.updateSubrs(localSubrsMap2, globalSubrsMap2, localSubrs, globalSubrs); err != nil {
+		if err := cff2.updateSubrs(localSubrsMap2, globalSubrsMap2, localSubrs, globalSubrs, localSubrsLen, globalSubrsLen); err != nil {
 			return err
 		}
 

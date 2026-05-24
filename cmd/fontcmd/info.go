@@ -35,9 +35,9 @@ func (cmd *Info) Run() error {
 	} else if sfntVersion == "ttcf" {
 		version = "Collection"
 	}
-	fmt.Printf("File: %s\n\n", cmd.Input)
+	fmt.Printf("File: %s\n", cmd.Input)
 	fmt.Printf("sfntVersion: 0x%08X (%s)\n", sfntVersion, version)
-	fmt.Printf("\nTable directory:\n")
+	fmt.Printf("Table directory:\n")
 
 	nLen := int(math.Log10(float64(len(b))) + 1)
 	for i := 0; i < numTables; i++ {

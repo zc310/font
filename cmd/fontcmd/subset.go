@@ -25,8 +25,8 @@ type Subset struct {
 	Type          string   `short:"t" desc:"Explicitly set output mimetype, eg. font/woff2."`
 	Encoding      string   `short:"e" desc:"Output encoding, either empty of base64."`
 	GlyphName     string   `desc:"New glyph name. Available variables: %i glyph ID, %n glyph name, %u glyph unicode in hexadecimal."`
-	Outputs       []string `short:"o" desc:"Output font file (only TTF/OTF/WOFF2/TTC/OTC are supported). Can output multiple file."`
-	Input         string   `index:"0" desc:"Input font file."`
+	Outputs       []string `short:"o" desc:"Output font files (only TTF/OTF/WOFF2/TTC/OTC are supported)."`
+	Input         string   `index:"0" desc:"Input font files."`
 }
 
 func (cmd *Subset) Run() error {
@@ -282,11 +282,6 @@ func (cmd *Subset) Run() error {
 		glyphIDs = append(glyphIDs, glyphID)
 	}
 	sort.Slice(glyphIDs, func(i, j int) bool { return glyphIDs[i] < glyphIDs[j] })
-
-	// set glyph names
-	if sfnt.IsCFF && cmd.GlyphName == "" {
-		sfnt.CFF.SetGlyphNames(nil)
-	}
 
 	// subset font
 	numGlyphs := sfnt.NumGlyphs()
