@@ -369,8 +369,8 @@ func (cmd *Subset) Run() error {
 		}
 		sort.Slice(glyphIDs, func(i, j int) bool { return glyphIDs[i] < glyphIDs[j] })
 
-		if sfnt.IsCFF && cmd.GlyphName == "" {
-			sfnt.CFF.SetGlyphNames(nil)
+		if sfnts[k].IsCFF && cmd.GlyphName == "" {
+			sfnts[k].CFF.SetGlyphNames(nil)
 		}
 
 		// subset font
