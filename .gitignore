@@ -4,3 +4,4 @@
 /tests/*/corpus/*
 !/tests/*/corpus/*.*
 !/testdata/**
+cmd/fontcmd/test

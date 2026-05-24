@@ -15,7 +15,7 @@ type Merge struct {
 	Type          string   `short:"t" desc:"Explicitly set output mimetype, eg. font/woff2."`
 	Encoding      string   `short:"e" desc:"Output encoding, either empty of base64."`
 	RearrangeCmap bool     `desc:"Rearrange glyph unicode mapping, assigning a sequential codepoint for each glyph in order starting at 33 (exclamation)."`
-	Outputs       []string `short:"o" desc:"Output font file (only TTF/OTF/WOFF2/TTC/OTC are supported). Can output multiple file."`
+	Outputs       []string `short:"o" desc:"Output font file, only TTF/OTF/WOFF2/TTC/OTC are supported."`
 	Inputs        []string `index:"*" desc:"Input font files."`
 }
 
