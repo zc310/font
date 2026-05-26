@@ -524,15 +524,56 @@ func reconstructGlyfLoca(b []byte, origLocaLength uint32) ([]byte, []byte, error
 			w.WriteUint16(instructionLength)
 			w.WriteBytes(instructions)
 
-			// we could write this more compactly, but is that really necessary?
-			for _, outlineFlag := range outlineFlags {
-				w.WriteByte(outlineFlag) // flag
+			// compact coordinate encoding: a delta of 0 uses *_IS_SAME (no byte),
+			// a delta in [-255,255] uses *_SHORT_VECTOR plus the IS_POSITIVE bit
+			// (1 byte), larger deltas fall back to a signed int16, otherwise
+			// every coordinate would take two bytes and could push glyf past
+			// the short-loca byte cap
+			for i, dx := range xCoordinates {
+				dy := yCoordinates[i]
+				flag := outlineFlags[i]
+				if dx == 0 {
+					flag |= 0x10 // X_IS_SAME
+				} else if -255 <= dx && dx <= 255 {
+					flag |= 0x02 // X_SHORT_VECTOR
+					if 0 < dx {
+						flag |= 0x10 // positive
+					}
+				}
+				if dy == 0 {
+					flag |= 0x20 // Y_IS_SAME
+				} else if -255 <= dy && dy <= 255 {
+					flag |= 0x04 // Y_SHORT_VECTOR
+					if 0 < dy {
+						flag |= 0x20 // positive
+					}
+				}
+				outlineFlags[i] = flag
 			}
-			for _, xCoordinate := range xCoordinates {
-				w.WriteInt16(xCoordinate)
+			for _, flag := range outlineFlags {
+				w.WriteByte(flag)
 			}
-			for _, yCoordinate := range yCoordinates {
-				w.WriteInt16(yCoordinate)
+			for i, dx := range xCoordinates {
+				flag := outlineFlags[i]
+				if flag&0x02 != 0 {
+					if dx < 0 {
+						dx = -dx
+					}
+					w.WriteByte(byte(dx))
+				} else if flag&0x10 == 0 {
+					w.WriteInt16(dx)
+				}
+			}
+			for i, dy := range yCoordinates {
+				flag := outlineFlags[i]
+				if flag&0x04 != 0 {
+					if dy < 0 {
+						dy = -dy
+					}
+					w.WriteByte(byte(dy))
+				} else if flag&0x20 == 0 {
+					w.WriteInt16(dy)
+				}
 			}
 		} else { // composite glyph
 			if !explicitBbox {
