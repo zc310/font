@@ -365,7 +365,9 @@ func reconstructGlyfLoca(b []byte, origLocaLength uint32) ([]byte, []byte, error
 	instructionStream := parse.NewBinaryReaderBytes(r.ReadBytes(int64(instructionStreamSize)))
 	var overlapSimpleBitmap *parse.BitmapReader
 	if optionFlags&0x0001 != 0 { // overlapSimpleBitmap present
-		overlapSimpleBitmap = parse.NewBitmapReader(r.ReadBytes(int64(bitmapSize)))
+		// overlapSimpleBitmap is a packed bit array of numGlyphs bits with no 4-byte padding
+		overlapBitmapSize := (uint32(numGlyphs) + 7) >> 3
+		overlapSimpleBitmap = parse.NewBitmapReader(r.ReadBytes(int64(overlapBitmapSize)))
 	}
 	if r.Err() == io.EOF {
 		return nil, nil, fmt.Errorf("glyf: %w", ErrInvalidFontData)
@@ -383,6 +385,11 @@ func reconstructGlyfLoca(b []byte, origLocaLength uint32) ([]byte, []byte, error
 	loca := parse.NewBinaryWriter(make([]byte, 0, locaLength))
 	for iGlyph := uint16(0); iGlyph < numGlyphs; iGlyph++ {
 		if indexFormat == 0 {
+			// short loca stores offset/2 as uint16, so glyf must fit in 0xFFFE*2 bytes,
+			// longer tables must use indexFormat 1
+			if w.Len() > int64(0xFFFE*2) {
+				return nil, nil, fmt.Errorf("glyf: short loca exceeded: %w", ErrInvalidFontData)
+			}
 			loca.WriteUint16(uint16(w.Len() >> 1))
 		} else {
 			loca.WriteUint32(uint32(w.Len()))
@@ -415,6 +422,11 @@ func reconstructGlyfLoca(b []byte, origLocaLength uint32) ([]byte, []byte, error
 					return nil, nil, fmt.Errorf("glyf: %w", ErrInvalidFontData)
 				}
 				nPoints += nPoint
+				// the first contour must contribute at least one point,
+				// otherwise nPoints-1 below would underflow
+				if nPoints == 0 {
+					return nil, nil, fmt.Errorf("glyf: leading contour has no points: %w", ErrInvalidFontData)
+				}
 				endPtsOfContours[iContour] = nPoints - 1
 			}
 			if nPointsStream.Err() == io.EOF {
@@ -602,14 +614,21 @@ func reconstructGlyfLoca(b []byte, origLocaLength uint32) ([]byte, []byte, error
 			}
 		}
 
-		// offsets for loca table should be 4-byte aligned
-		for w.Len()%4 != 0 {
+		// align glyphs to the loca offset granularity: 2 bytes for short, 4 for long
+		align := int64(2)
+		if indexFormat != 0 {
+			align = 4
+		}
+		for w.Len()%align != 0 {
 			w.WriteByte(0x00)
 		}
 	}
 
 	// last entry in loca table
 	if indexFormat == 0 {
+		if w.Len() > int64(0xFFFE*2) {
+			return nil, nil, fmt.Errorf("glyf: short loca exceeded: %w", ErrInvalidFontData)
+		}
 		loca.WriteUint16(uint16(w.Len() >> 1))
 	} else {
 		loca.WriteUint32(uint32(w.Len()))
