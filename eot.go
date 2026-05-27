@@ -65,8 +65,10 @@ func ParseEOT(b []byte) ([]byte, error) {
 	}
 
 	fontData := r.ReadBytes(int64(fontDataSize))
-	if r.Err() == io.EOF {
+	if err := r.Err(); err == io.EOF {
 		return nil, ErrInvalidFontData
+	} else if err != nil {
+		return nil, err
 	}
 
 	isCompressed := (flags & 0x00000004) != 0

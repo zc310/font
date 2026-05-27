@@ -3,6 +3,7 @@ package font
 import (
 	"encoding/binary"
 	"fmt"
+	"io"
 	"math"
 	"sort"
 	"sync"
@@ -358,6 +359,11 @@ func parseSFNT(b []byte, index int, embedded bool) (*SFNT, error) {
 			//	return nil, fmt.Errorf("%s: bad checksum", tag)
 		}
 		tables[tag] = b[offset : offset+length : offset+length]
+	}
+	if err := r.Err(); err == io.EOF {
+		return nil, ErrInvalidFontData
+	} else if err != nil {
+		return nil, err
 	}
 
 	sfnt := &SFNT{}

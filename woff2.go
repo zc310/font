@@ -155,8 +155,7 @@ func ParseWOFF2(b []byte) ([]byte, error) {
 	iLoca, hasLoca := tagTableIndex["loca"]
 	if hasGlyf != hasLoca || hasGlyf && tables[iGlyf].transformVersion != tables[iLoca].transformVersion {
 		return nil, fmt.Errorf("glyf and loca tables must be both present and either be both transformed or untransformed")
-	}
-	if hasLoca && tables[iLoca].transformLength != 0 {
+	} else if hasLoca && tables[iLoca].transformLength != 0 {
 		return nil, fmt.Errorf("loca: transformLength must be zero")
 	}
 
@@ -164,8 +163,10 @@ func ParseWOFF2(b []byte) ([]byte, error) {
 
 	// decompress font data using Brotli
 	compData := r.ReadBytes(int64(totalCompressedSize))
-	if r.Err() == io.EOF {
+	if err := r.Err(); err == io.EOF {
 		return nil, ErrInvalidFontData
+	} else if err != nil {
+		return nil, err
 	} else if MaxMemory < uncompressedSize {
 		return nil, ErrExceedsMemory
 	}
@@ -257,9 +258,7 @@ func ParseWOFF2(b []byte) ([]byte, error) {
 	binary.BigEndian.PutUint32(tables[iHead].data[8:], 0x00000000) // clear checkSumAdjustment
 	if flags := binary.BigEndian.Uint16(tables[iHead].data[16:]); flags&0x0800 == 0 {
 		return nil, fmt.Errorf("head: bit 11 in flags must be set")
-	}
-
-	if _, hasDSIG := tagTableIndex["DSIG"]; hasDSIG {
+	} else if _, hasDSIG := tagTableIndex["DSIG"]; hasDSIG {
 		return nil, fmt.Errorf("DSIG: must be removed")
 	}
 
@@ -268,7 +267,7 @@ func ParseWOFF2(b []byte) ([]byte, error) {
 	var entrySelector uint16
 	var rangeShift uint16
 	for {
-		if searchRange*2 > numTables {
+		if numTables < searchRange*2 {
 			break
 		}
 		searchRange *= 2
@@ -387,7 +386,7 @@ func reconstructGlyfLoca(b []byte, origLocaLength uint32) ([]byte, []byte, error
 		if indexFormat == 0 {
 			// short loca stores offset/2 as uint16, so glyf must fit in 0xFFFE*2 bytes,
 			// longer tables must use indexFormat 1
-			if w.Len() > int64(0xFFFE*2) {
+			if int64(0xFFFE*2) < w.Len() {
 				return nil, nil, fmt.Errorf("glyf: short loca exceeded: %w", ErrInvalidFontData)
 			}
 			loca.WriteUint16(uint16(w.Len() >> 1))
@@ -667,7 +666,7 @@ func reconstructGlyfLoca(b []byte, origLocaLength uint32) ([]byte, []byte, error
 
 	// last entry in loca table
 	if indexFormat == 0 {
-		if w.Len() > int64(0xFFFE*2) {
+		if int64(0xFFFE*2) < w.Len() {
 			return nil, nil, fmt.Errorf("glyf: short loca exceeded: %w", ErrInvalidFontData)
 		}
 		loca.WriteUint16(uint16(w.Len() >> 1))

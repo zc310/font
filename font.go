@@ -71,17 +71,17 @@ func ToSFNT(b []byte) ([]byte, error) {
 		return b, nil
 	case "font/woff":
 		if b, err = ParseWOFF(b); err != nil {
-			return nil, fmt.Errorf("WOFF: %w", err)
+			return nil, err
 		}
 		return b, nil
 	case "font/woff2":
 		if b, err = ParseWOFF2(b); err != nil {
-			return nil, fmt.Errorf("WOFF2: %w", err)
+			return nil, err
 		}
 		return b, nil
 	case "application/vnd.ms-fontobject":
 		if b, err = ParseEOT(b); err != nil {
-			return nil, fmt.Errorf("EOT: %w", err)
+			return nil, err
 		}
 		return b, nil
 	}

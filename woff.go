@@ -122,9 +122,12 @@ func ParseWOFF(b []byte) ([]byte, error) {
 
 	if totalSfntSize != sfntOffset {
 		return nil, fmt.Errorf("totalSfntSize is incorrect")
-	}
-	if tablePos.HasOverlap() {
+	} else if tablePos.HasOverlap() {
 		return nil, fmt.Errorf("tables can not overlap")
+	} else if err := r.Err(); err == io.EOF {
+		return nil, ErrInvalidFontData
+	} else if err != nil {
+		return nil, err
 	}
 
 	var searchRange uint16 = 1

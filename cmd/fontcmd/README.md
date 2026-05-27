@@ -6,6 +6,9 @@ Display font information.
 ```
 Usage: fontcmd info [options] input
 
+Options:
+  -h, --help Help
+
 Arguments:
   input     Input file
 ```
@@ -34,6 +37,7 @@ Arguments:
 
 Example for the character A in DejaVuSans:
 ```
+$ fontcmd draw -cA DejaVuSerif.ttf
 GlyphID: 36
 Char: A (65)
 Name: A
@@ -85,35 +89,49 @@ Reduce the size of a font file by selecting a subset of the glyphs. Typically, f
 Example: the DejaVuSans.ttf file is 380 kB and contains 3528 glyphs. Only selecting only common ASCII characters used in the English language (78 glyphs) the file size becomes 17 kB (or 4.6% of the original). Saving as a WOFF2 file reduces the file size to 11 kB.
 
 ```
-Usage: fontcmd subset [options] input
+Usage: fontcmd subset [options] inputs...
 
 Options:
-  -c, --char []string     List of literal characters to keep, eg. a-z.
+  -c, --char []string     List of literal characters to keep, eg. a-z. The same escape sequences are supported as for Go strings, where ,
+                          and - also need escaping.
   -e, --encoding string   Output encoding, either empty of base64.
   -f, --force             Force overwriting existing files.
   -g, --glyph []string    List of glyph IDs to keep, eg. 1-100.
       --glyph-name string New glyph name. Available variables: %i glyph ID, %n glyph name, %u glyph unicode in hexadecimal.
   -h, --help              Help
-  -i, --index int         Index into font collection (used with TTC or OTC).
+  -i, --index int         Index into font collection, used with TTC or OTC.
   -n, --name []string     List of glyph names to keep, eg. space.
-  -o, --outputs []string  Output font file (only TTF/OTF/WOFF2/TTC/OTC are supported). Can output multiple file.
+  -o, --outputs []string  Output font files, only TTF/OTF/WOFF2/TTC/OTC are supported.
   -q, --quiet             Suppress output except for errors.
   -r, --range []string    List of unicode categories or scripts to keep, eg. L (for Letters) or Latin (latin script). See
                           https://pkg.go.dev/unicode for all supported values.
+      --rearrange-cmap    Rearrange glyph unicode mapping, assigning a sequential codepoint for each glyph in order starting at 33
+                          (exclamation).
   -t, --type string       Explicitly set output mimetype, eg. font/woff2.
   -u, --unicode []string  List of unicode IDs to keep, eg. f0fc-f0ff.
 
 Arguments:
-  input     Input font file.
+  inputs    Input font files, multiple fallback fonts are supported.
 ```
 
 ### Examples
+Create a subset for DejavuSerif:
 ```
-fontcmd subset -c'a-zA-Z0-9,.:;?!@#$%()" -' -c"'" --out dejavu\_subset.ttf DejavuSans.ttf
+$ fontcmd subset -c'a-zA-Z0-9,.:;?!@#$%()" -' -c"'" -o subset.ttf DejavuSerif.ttf
+subset.ttf:  3528 => 78 glyphs,  380 kB => 17 kB (4.6%)
 ```
 
+Cherry-pick icons from FontAwesome:
 ```
-fontcmd subset -nenvelope,user,phone -ofa.woff fa-solid-900.ttf
+$ fontcmd subset -nenvelope,user,phone -ofa.woff2 fa-solid.otf
+fa.woff2:  1426 => 4 glyphs,  415 kB => 0.7 kB (0.2%)
+```
+
+The superscript minus sign is not present in the IBMPlexSans-Regular font, but we can fallback to IBMPlexMath-Regular:
+```
+$ fontcmd subset -f -c=' a-zA-Z0-9ÁÉÍÓÚÜÑáéíóúüñ\,.!?:;¡¿/()$$€°"′″×\u2000\-–\u00A0⁻⁰¹²³<>=≤≥+@#%≈'"'" -u2074-2079 --glyph-name="%i" -oibm.otf,ibm.woff2 IBMPlexSans-Regular.otf IBMPlexMath-Regular.otf
+ibm.otf:  1017 => 122 glyphs,  136 kB => 11 kB (8.0%)
+ibm.woff2:  1017 => 122 glyphs,  136 kB => 9.3 kB (6.8%)
 ```
 
 ## Merge
@@ -126,7 +144,7 @@ Options:
   -e, --encoding string  Output encoding, either empty of base64.
   -f, --force            Force overwriting existing files.
   -h, --help             Help
-  -o, --outputs []string Output font file (only TTF/OTF/WOFF2/TTC/OTC are supported). Can output multiple file.
+  -o, --outputs []string Output font file, only TTF/OTF/WOFF2/TTC/OTC are supported.
   -q, --quiet            Suppress output except for errors.
       --rearrange-cmap   Rearrange glyph unicode mapping, assigning a sequential codepoint for each glyph in order starting at 33
                          (exclamation).
@@ -134,6 +152,18 @@ Options:
 
 Arguments:
   inputs    Input font files.
+```
+
+### Examples
+Merge subsets from FontAwesome:
+```
+$ fontcmd subset -nuser,phone --glyph-name=%n -ofa1.otf fa-solid.otf
+fa1.otf:  1426 => 3 glyphs,  415 kB => 1.0 kB (0.2%)
+$ fontcmd subset -nenvelope --glyph-name=%n-o -ofa2.otf fa-regular.otf
+fa2.otf:  209 => 2 glyphs,  87 kB => 0.9 kB (1.1%)
+$ fontcmd merge -ofa.otf,fa.woff2 fa1.otf fa2.otf
+fa.otf:  1.9 kB => 1.2 kB (63.5%)
+fa.woff2:  1.9 kB => 0.8 kB (42.6%)
 ```
 
 ## CSS
@@ -154,4 +184,13 @@ Options:
 
 Arguments:
   input     Input font file.
+```
+
+### Examples
+```
+$ fontcmd css -a -ofa.css --selector '.fa-%n:before' fa.otf
+$ cat fa.css
+.fa-user:before{content:"\f007"}
+.fa-phone:before{content:"\f095"}
+.fa-envelope-o:before{content:"\2709"}
 ```
