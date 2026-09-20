@@ -1037,8 +1037,24 @@ func (cff *cffTable) updateSubrs(localSubrsMap, globalSubrsMap map[int32]int32, 
 	return nil
 }
 
+// hasSubrs 判断字体的全局或任意 Local Subrs INDEX 是否非空。
+func (cff *cffTable) hasSubrs() bool {
+	if cff.globalSubrs != nil && cff.globalSubrs.Len() > 0 {
+		return true
+	}
+	for _, subrs := range cff.fonts.localSubrs {
+		if subrs != nil && subrs.Len() > 0 {
+			return true
+		}
+	}
+	return false
+}
+
 // reindex subroutines in the order in which they appear and rearrange the global and local subroutines INDEX
 func (cff *cffTable) ReindexSubrs() error {
+	if !cff.hasSubrs() {
+		return nil
+	}
 	if 1 < len(cff.fonts.localSubrs) {
 		return fmt.Errorf("only single-font CFFs are supported")
 	}
@@ -1533,6 +1549,24 @@ func (t *cffTopDICT) Write(strings *cffINDEX) ([]byte, error) {
 	}
 	if 0 < len(t.BaseFontBlend) {
 		writeDICTEntry(w, 256+23, t.BaseFontBlend)
+	}
+	if t.IsCID {
+		writeDICTEntry(w, 256+30, strings.AddSID([]byte(t.ROS1)), strings.AddSID([]byte(t.ROS2)), t.ROS3)
+		if t.CIDFontVersion != 0 {
+			writeDICTEntry(w, 256+31, t.CIDFontVersion)
+		}
+		if t.CIDFontRevision != 0 {
+			writeDICTEntry(w, 256+32, t.CIDFontRevision)
+		}
+		if t.CIDFontType != 0 {
+			writeDICTEntry(w, 256+33, t.CIDFontType)
+		}
+		if t.CIDCount != 0 {
+			writeDICTEntry(w, 256+34, t.CIDCount)
+		}
+		if t.UIDBase != 0 {
+			writeDICTEntry(w, 256+35, t.UIDBase)
+		}
 	}
 	return w.Bytes(), nil
 }
@@ -2101,10 +2135,10 @@ func (cff *cffTable) Write() ([]byte, error) {
 	if cff.version != 1 {
 		return nil, fmt.Errorf("unsupported version: %d", cff.version)
 	}
-
-	if 1 < len(cff.fonts.private) || 1 < len(cff.fonts.localSubrs) {
-		return nil, fmt.Errorf("must contain only one font")
+	if cff.fonts == nil {
+		cff.fonts = &cffFontINDEX{}
 	}
+	isCID := cff.top != nil && cff.top.IsCID
 
 	w := parse.NewBinaryWriter([]byte{})
 	w.WriteUint8(1) // major version
@@ -2217,30 +2251,42 @@ func (cff *cffTable) Write() ([]byte, error) {
 		return nil, fmt.Errorf("CharStrings INDEX: %v", err)
 	}
 
+	// Build the Private DICT section. For non-CID fonts there is a single Private
+	// DICT referenced from the Top DICT; for CID fonts each Font DICT in FDArray
+	// has its own Private DICT and FDSelect assigns glyphs to Font DICTs.
 	var privateDICT []byte
 	var localSubrsINDEX []byte
-	localSubrsOffset := 0
-	if cff.fonts == nil {
-		cff.fonts = &cffFontINDEX{}
-	}
-	if len(cff.fonts.private) != 0 {
-		privateDICT, err = cff.fonts.private[0].Write()
-		if err != nil {
-			return nil, fmt.Errorf("Private DICT: %v", err)
+	var cidPrivates [][]byte
+	var cidLocalSubrs [][]byte
+	var fdSelectBytes []byte
+	if isCID {
+		for i := range cff.fonts.private {
+			privateBytes, err := buildPrivateDICT(cff.fonts.private[i], cff.fonts.localSubrs, i)
+			if err != nil {
+				return nil, err
+			}
+			cidPrivates = append(cidPrivates, privateBytes)
+			if i < len(cff.fonts.localSubrs) && cff.fonts.localSubrs[i] != nil {
+				subrsBytes, err := cff.fonts.localSubrs[i].Write()
+				if err != nil {
+					return nil, fmt.Errorf("Local Subrs INDEX: %v", err)
+				}
+				cidLocalSubrs = append(cidLocalSubrs, subrsBytes)
+			} else {
+				cidLocalSubrs = append(cidLocalSubrs, nil)
+			}
 		}
-
-		if len(cff.fonts.localSubrs) != 0 {
+		fdSelectBytes = writeFDSelect(cff.fonts, numGlyphs)
+	} else if len(cff.fonts.private) != 0 {
+		privateDICT, err = buildPrivateDICT(cff.fonts.private[0], cff.fonts.localSubrs, 0)
+		if err != nil {
+			return nil, err
+		}
+		if len(cff.fonts.localSubrs) != 0 && cff.fonts.localSubrs[0] != nil {
 			localSubrsINDEX, err = cff.fonts.localSubrs[0].Write()
 			if err != nil {
 				return nil, fmt.Errorf("Local Subrs INDEX: %v", err)
 			}
-
-			// write offset to Private DICT
-			localSubrsOffset = len(privateDICT) + 1                  // key
-			localSubrsOffset += cffDICTIntegerSize(localSubrsOffset) // val
-			wPrivate := parse.NewBinaryWriter(privateDICT)
-			writeDICTEntry(wPrivate, 19, localSubrsOffset)
-			privateDICT = wPrivate.Bytes()
 		}
 	}
 
@@ -2252,7 +2298,10 @@ func (cff *cffTable) Write() ([]byte, error) {
 		lenTopDICT += 1 // key
 	}
 	lenTopDICT += 1 // charStrings key
-	if privateDICT != nil {
+	if isCID {
+		lenTopDICT += 2 // FDArray operator (12 36)
+		lenTopDICT += 2 // FDSelect operator (12 37)
+	} else if privateDICT != nil {
 		lenTopDICT += 1 + cffDICTIntegerSize(len(privateDICT)) // key and size
 	}
 	lenTopDICTINDEXOffSize := cffINDEXOffSize(lenTopDICT)
@@ -2276,7 +2325,27 @@ func (cff *cffTable) Write() ([]byte, error) {
 	if math.MaxInt32-charStringsOffset < len(charStringsINDEX) {
 		return nil, fmt.Errorf("size too large")
 	}
-	privateOffset := charStringsOffset + len(charStringsINDEX)
+
+	fdSelectOffset := 0
+	fdArrayOffset := 0
+	privateOffset := 0
+	var cidPrivateOffsets []int
+	if isCID {
+		fdSelectOffset = charStringsOffset + len(charStringsINDEX)
+		privateBase := fdSelectOffset + len(fdSelectBytes)
+		cursor := privateBase
+		cidPrivateOffsets = make([]int, len(cidPrivates))
+		for i := range cidPrivates {
+			cidPrivateOffsets[i] = cursor
+			cursor += len(cidPrivates[i])
+			if cidLocalSubrs[i] != nil {
+				cursor += len(cidLocalSubrs[i])
+			}
+		}
+		fdArrayOffset = cursor
+	} else {
+		privateOffset = charStringsOffset + len(charStringsINDEX)
+	}
 
 	// correct for offset calculated above (grow Top DICT)
 	correct, prevCorrect := 0, -1
@@ -2287,14 +2356,40 @@ func (cff *cffTable) Write() ([]byte, error) {
 			correct += cffDICTIntegerSize(charsetOffset + correct) // integer length in DICT
 		}
 		correct += cffDICTIntegerSize(charStringsOffset + correct) // integer length in DICT
-		if privateDICT != nil {
+		if isCID {
+			correct += cffDICTIntegerSize(fdArrayOffset + correct)
+			correct += cffDICTIntegerSize(fdSelectOffset + correct)
+		} else if privateDICT != nil {
 			correct += cffDICTIntegerSize(privateOffset + correct) // integer length in DICT
 		}
 		correct += cffINDEXOffSize(lenTopDICT+correct) - lenTopDICTINDEXOffSize // offSize in INDEX
 	}
 	charsetOffset += correct
 	charStringsOffset += correct
-	privateOffset += correct
+	if isCID {
+		fdArrayOffset += correct
+		fdSelectOffset += correct
+		for i := range cidPrivateOffsets {
+			cidPrivateOffsets[i] += correct
+		}
+	} else {
+		privateOffset += correct
+	}
+
+	// FDArray must be built after the offset correction because its Font DICTs
+	// contain the absolute Private DICT offsets. FDArray is written last, so its
+	// length does not affect any other offset.
+	var fdArrayINDEX []byte
+	if isCID {
+		fontINDEX := &cffINDEX{}
+		for i := range cidPrivates {
+			fontINDEX.Add(writeFontDICT(cidPrivateOffsets[i], len(cidPrivates[i])))
+		}
+		fdArrayINDEX, err = fontINDEX.Write()
+		if err != nil {
+			return nil, fmt.Errorf("Font INDEX: %v", err)
+		}
+	}
 
 	// write offsets to Top DICT
 	wTop := parse.NewBinaryWriter(topDICT)
@@ -2302,7 +2397,10 @@ func (cff *cffTable) Write() ([]byte, error) {
 		writeDICTEntry(wTop, 15, charsetOffset)
 	}
 	writeDICTEntry(wTop, 17, charStringsOffset)
-	if privateDICT != nil {
+	if isCID {
+		writeDICTEntry(wTop, 256+36, fdArrayOffset)
+		writeDICTEntry(wTop, 256+37, fdSelectOffset)
+	} else if privateDICT != nil {
 		writeDICTEntry(wTop, 18, len(privateDICT), privateOffset)
 	}
 	topDICT = wTop.Bytes()
@@ -2323,9 +2421,71 @@ func (cff *cffTable) Write() ([]byte, error) {
 		w.WriteBytes(charset.Bytes())
 	}
 	w.WriteBytes(charStringsINDEX)
-	if privateDICT != nil {
-		w.WriteBytes(privateDICT)
+	if isCID {
+		w.WriteBytes(fdSelectBytes)
+		for i := range cidPrivates {
+			w.WriteBytes(cidPrivates[i])
+			if cidLocalSubrs[i] != nil {
+				w.WriteBytes(cidLocalSubrs[i])
+			}
+		}
+		w.WriteBytes(fdArrayINDEX)
+	} else {
+		if privateDICT != nil {
+			w.WriteBytes(privateDICT)
+		}
+		w.WriteBytes(localSubrsINDEX)
 	}
-	w.WriteBytes(localSubrsINDEX)
 	return w.Bytes(), nil
+}
+
+// buildPrivateDICT 序列化一个 Private DICT，并在存在 Local Subrs INDEX 时写入其相对偏移。
+func buildPrivateDICT(private *cffPrivateDICT, localSubrs []*cffINDEX, index int) ([]byte, error) {
+	var privateDICT []byte
+	var err error
+	if private != nil {
+		privateDICT, err = private.Write()
+		if err != nil {
+			return nil, fmt.Errorf("Private DICT: %v", err)
+		}
+	}
+	if index < len(localSubrs) && localSubrs[index] != nil {
+		localSubrsOffset := len(privateDICT) + 1                 // key
+		localSubrsOffset += cffDICTIntegerSize(localSubrsOffset) // val
+		wPrivate := parse.NewBinaryWriter(privateDICT)
+		writeDICTEntry(wPrivate, 19, localSubrsOffset)
+		privateDICT = wPrivate.Bytes()
+	}
+	return privateDICT, nil
+}
+
+// writeFontDICT 序列化 FDArray 中指向 Private DICT 的 Font DICT。
+func writeFontDICT(privateOffset, privateLength int) []byte {
+	w := parse.NewBinaryWriter([]byte{})
+	writeDICTEntry(w, 18, privateLength, privateOffset)
+	return w.Bytes()
+}
+
+// writeFDSelect 以 format 3 写出字形到 Font DICT 的映射。
+func writeFDSelect(fonts *cffFontINDEX, numGlyphs int) []byte {
+	w := parse.NewBinaryWriter([]byte{})
+	w.WriteUint8(3)
+	type fdRange struct {
+		first uint16
+		fd    uint16
+	}
+	ranges := make([]fdRange, 0, numGlyphs)
+	for glyphID := 0; glyphID < numGlyphs; glyphID++ {
+		fd, _ := fonts.Index(uint32(glyphID))
+		if len(ranges) == 0 || ranges[len(ranges)-1].fd != fd {
+			ranges = append(ranges, fdRange{first: uint16(glyphID), fd: fd})
+		}
+	}
+	w.WriteUint16(uint16(len(ranges)))
+	for _, ran := range ranges {
+		w.WriteUint16(ran.first)
+		w.WriteUint8(uint8(ran.fd))
+	}
+	w.WriteUint16(uint16(numGlyphs))
+	return w.Bytes()
 }

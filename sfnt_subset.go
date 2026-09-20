@@ -190,6 +190,21 @@ func (sfnt *SFNT) Subset(glyphIDs []uint16, options SubsetOptions) (*SFNT, error
 				cff.charset = charset
 			}
 
+			// CID fonts assign glyphs to Font DICTs through FDSelect; remap it to the
+			// subset glyph order so the subset font keeps the right Private DICTs.
+			if sfntOld.CFF.fonts != nil && 1 < len(sfntOld.CFF.fonts.private) {
+				fonts := *sfntOld.CFF.fonts
+				fds := make([]uint8, len(glyphIDs))
+				for i, glyphID := range glyphIDs {
+					fd, _ := sfntOld.CFF.fonts.Index(uint32(glyphID))
+					fds[i] = uint8(fd)
+				}
+				fonts.fds = fds
+				fonts.first = nil
+				fonts.fd = nil
+				cff.fonts = &fonts
+			}
+
 			// trim globalSubrs and localSubrs INDEX
 			if err := cff.ReindexSubrs(); err != nil {
 				return nil, err
