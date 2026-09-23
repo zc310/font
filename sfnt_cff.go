@@ -2165,14 +2165,27 @@ func (cff *cffTable) Write() ([]byte, error) {
 
 	var charset *parse.BinaryWriter
 	numGlyphs := cff.charStrings.Len()
-	if cff.charset != nil {
+	names := cff.charset
+	if names == nil && 229 < numGlyphs {
+		// 未提供字形名（如 canvas 为压缩体积调用 SetGlyphNames(nil)）且字形数
+		// 超出 charset format 0 的可表示范围时，生成占位字形名，保证 CFF 的
+		// charset 结构完整可写出。PDF 嵌入依赖 CIDToGIDMap 与 charstrings，
+		// 不依赖真实字形名；此前这里直接报错，导致内嵌 CFF 子集化失败、文字
+		// 退化为矢量轮廓而不可复制。
+		names = make([]string, numGlyphs)
+		names[0] = ".notdef"
+		for i := 1; i < numGlyphs; i++ {
+			names[i] = "gid" + strconv.Itoa(i)
+		}
+	}
+	if names != nil {
 		// TODO: reorder entries in charString sequentially to make this smaller
-		if len(cff.charset) != numGlyphs {
+		if len(names) != numGlyphs {
 			return nil, fmt.Errorf("charset length must match number of glyphs")
 		}
 
 		sids := make([]int, numGlyphs-1)
-		for i, name := range cff.charset[1:numGlyphs] {
+		for i, name := range names[1:numGlyphs] {
 			sids[i] = strings.AddSID([]byte(name))
 		}
 
@@ -2226,8 +2239,6 @@ func (cff *cffTable) Write() ([]byte, error) {
 				charset.WriteUint16(ran[1])
 			}
 		}
-	} else if 229 < numGlyphs {
-		return nil, fmt.Errorf("charset must be set explicitly for more than 229 glyphs")
 	}
 
 	stringINDEX, err := strings.Write()

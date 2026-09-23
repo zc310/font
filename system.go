@@ -514,7 +514,7 @@ func getSFNTMetadata(r io.ReadSeeker) (FontMetadata, error) {
 	numTables := u16(header[4:])
 
 	// read tables list
-	var offset uint32
+	var offset, os2Offset uint32
 	tables, err := read(r, 16*int(numTables))
 	if err != nil {
 		return FontMetadata{}, err
@@ -522,7 +522,8 @@ func getSFNTMetadata(r io.ReadSeeker) (FontMetadata, error) {
 	for i := 0; i < 16*int(numTables); i += 16 {
 		if bytes.Equal(tables[i:i+4], []byte("name")) {
 			offset = u32(tables[i+8:])
-			break
+		} else if bytes.Equal(tables[i:i+4], []byte("OS/2")) {
+			os2Offset = u32(tables[i+8:])
 		}
 	}
 	if offset == 0 {
@@ -592,7 +593,28 @@ func getSFNTMetadata(r io.ReadSeeker) (FontMetadata, error) {
 			return FontMetadata{}, fmt.Errorf("font family not found")
 		}
 
-		style := ParseStyle(subfamily)
+		// OS/2 的 usWeightClass 与 fsSelection 比 subfamily 名称可靠（例如
+		// Arial Black 的 subfamily 写作 "Regular"，只有 OS/2 记录其 900）。
+		style := UnknownStyle
+		if os2Offset != 0 {
+			if _, err := r.Seek(int64(os2Offset), io.SeekStart); err == nil {
+				if value, err := read(r, 64); err == nil && 64 <= len(value) {
+					weight := int(u16(value[4:]))
+					fsSelection := u16(value[62:])
+					italic := fsSelection&0x0001 != 0
+					if 100 <= weight && weight <= 900 {
+						style = ParseStyleCSS(weight, italic)
+						// 少数字体 usWeightClass 偏低却置了 BOLD 位，以 BOLD 位兜底。
+						if fsSelection&0x0020 != 0 && style.Weight() < Bold {
+							style = style&Italic | Bold
+						}
+					}
+				}
+			}
+		}
+		if style == UnknownStyle {
+			style = ParseStyle(subfamily)
+		}
 		if style == UnknownStyle {
 			return FontMetadata{}, fmt.Errorf("unknown subfamily style: %s", subfamily)
 		}
