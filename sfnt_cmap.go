@@ -645,7 +645,11 @@ func (sfnt *SFNT) parseCmap() error {
 				//	}
 				//}
 			default:
-				return fmt.Errorf("cmap: unsupported subtable format %d", format)
+				// skip subtables that cannot be decoded, such as the legacy
+				// format 2 high-byte mapping, and use the remaining ones
+				offsets = offsets[:len(offsets)-1]
+				lengths = lengths[:len(lengths)-1]
+				continue
 			}
 		}
 		sfnt.Cmap.EncodingRecords = append(sfnt.Cmap.EncodingRecords, cmapEncodingRecord{
