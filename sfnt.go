@@ -556,9 +556,12 @@ func (sfnt *SFNT) parseHead() error {
 	b, ok := sfnt.Tables["head"]
 	if !ok {
 		return fmt.Errorf("head: missing table")
-	} else if len(b) != 54 {
+	} else if len(b) < 54 {
 		return fmt.Errorf("head: bad table")
 	}
+	// Some OFD subset fonts carry a head table with extra trailing bytes beyond
+	// the 54 bytes the specification defines. The surplus is harmless padding,
+	// so only the first 54 bytes are read and trailing data is tolerated.
 
 	sfnt.Head = &headTable{}
 	r := parse.NewBinaryReaderBytes(b)
