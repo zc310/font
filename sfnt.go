@@ -750,9 +750,15 @@ func (sfnt *SFNT) parseHmtx() error {
 	length := 4*uint32(sfnt.Hhea.NumberOfHMetrics) + 2*uint32(sfnt.Maxp.NumGlyphs-sfnt.Hhea.NumberOfHMetrics)
 	if !ok {
 		return fmt.Errorf("hmtx: missing table")
-	} else if uint32(len(b)) != length {
+	} else if sfnt.Hhea.NumberOfHMetrics > sfnt.Maxp.NumGlyphs {
+		return fmt.Errorf("hmtx: bad table")
+	} else if uint32(len(b)) < length {
 		return fmt.Errorf("hmtx: bad table")
 	}
+	// Some OFD subset fonts have an hmtx table with extra trailing bytes beyond
+	// what hhea/maxp require (e.g. numberOfHMetrics is short by one entry). The
+	// surplus is harmless alignment padding, so only the first length bytes are
+	// read and trailing data is tolerated.
 
 	sfnt.Hmtx = &hmtxTable{}
 	// numberOfHMetrics is smaller than numGlyphs
