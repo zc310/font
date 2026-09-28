@@ -507,9 +507,12 @@ func (sfnt *SFNT) Write() []byte {
 		if tag == "head" {
 			checksumAdjustmentPos = uint32(w.Len()) + 8
 			w.WriteBytes(table[:8])
-			w.WriteUint32(0)
-			w.WriteBytes(table[12:28])
-			w.WriteInt64(int64(time.Now().UTC().Sub(time.Date(1904, 1, 1, 0, 0, 0, 0, time.UTC)) / 1e9)) // modified
+			w.WriteUint32(0) // checkSumAdjustment, recomputed once the whole font is written
+			// Subsetting does not modify the font, so the created and modified
+			// timestamps are copied over unchanged. Stamping the current time here
+			// would make every write produce different bytes, which breaks
+			// reproducible output and any caching keyed on the font program.
+			w.WriteBytes(table[12:36])
 			w.WriteBytes(table[36:])
 		} else {
 			w.WriteBytes(table)
