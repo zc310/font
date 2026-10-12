@@ -3,7 +3,7 @@
 
 package fuzz
 
-import "github.com/tdewolff/font"
+import "github.com/zc310/font"
 
 // Fuzz is a fuzz test.
 func Fuzz(data []byte) int {

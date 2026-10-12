@@ -3,9 +3,9 @@ package main
 import (
 	"os"
 
-	"github.com/tdewolff/canvas"
-	"github.com/tdewolff/canvas/renderers"
-	"github.com/tdewolff/font"
+	"github.com/zc310/canvas"
+	"github.com/zc310/canvas/renderers"
+	"github.com/zc310/font"
 )
 
 const mmPerPt = 25.4 / 72.0

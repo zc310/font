@@ -3,7 +3,7 @@ package main
 import (
 	"os"
 
-	"github.com/tdewolff/font"
+	"github.com/zc310/font"
 )
 
 func main() {

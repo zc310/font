@@ -5,3 +5,4 @@
 !/tests/*/corpus/*.*
 !/testdata/**
 cmd/fontcmd/test
+.idea/

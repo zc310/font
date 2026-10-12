@@ -15,8 +15,8 @@ import (
 	"golang.org/x/image/tiff"
 	"golang.org/x/image/vector"
 
-	"github.com/tdewolff/canvas"
-	"github.com/tdewolff/font"
+	"github.com/zc310/canvas"
+	"github.com/zc310/font"
 )
 
 type Show struct {

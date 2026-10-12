@@ -1,15 +1,15 @@
-module github.com/tdewolff/font
+module github.com/zc310/font
 
 go 1.26.4
 
 require (
-	github.com/andybalholm/brotli v1.2.4
+	github.com/andybalholm/brotli v1.2.6
 	github.com/golang/freetype v0.0.0-20170609003504-e2365dfdc4a0
-	github.com/tdewolff/canvas v0.0.0-20260913163248-dd4999d1c76a
 	github.com/tdewolff/parse/v2 v2.8.16
 	github.com/tdewolff/test v1.0.12
-	golang.org/x/image v0.46.0
-	golang.org/x/text v0.42.0
+	github.com/zc310/canvas v0.0.0-20261012083747-2af41cda079e
+	golang.org/x/image v0.47.0
+	golang.org/x/text v0.43.0
 )
 
 require (
@@ -24,15 +24,15 @@ require (
 	github.com/benoitkugler/textlayout v0.3.2 // indirect
 	github.com/benoitkugler/textprocessing v0.0.6 // indirect
 	github.com/go-fonts/latin-modern v0.3.3 // indirect
-	github.com/go-text/typesetting v0.3.4 // indirect
+	github.com/go-text/typesetting v0.3.5 // indirect
 	github.com/kolesa-team/go-webp v1.0.5 // indirect
 	github.com/srwiley/rasterx v0.0.0-20220730225603-2ab79fcdd4ef // indirect
 	github.com/srwiley/scanx v0.0.0-20190309010443-e94503791388 // indirect
-	github.com/tdewolff/minify/v2 v2.24.17 // indirect
+	github.com/tdewolff/minify/v2 v2.24.19 // indirect
 	github.com/wcharczuk/go-chart/v2 v2.1.2 // indirect
-	github.com/yuin/goldmark v1.8.5 // indirect
-	golang.org/x/net v0.58.0 // indirect
-	golang.org/x/sys v0.48.0 // indirect
+	github.com/yuin/goldmark v1.8.6 // indirect
+	golang.org/x/net v0.61.0 // indirect
+	golang.org/x/sys v0.49.0 // indirect
 	gonum.org/v1/plot v0.17.0 // indirect
 	modernc.org/knuth v0.6.0 // indirect
 	modernc.org/token v1.1.0 // indirect

@@ -10,7 +10,7 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/tdewolff/font"
+	"github.com/zc310/font"
 )
 
 type Subset struct {
