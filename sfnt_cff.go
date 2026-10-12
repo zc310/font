@@ -24,6 +24,7 @@ type cffTable struct {
 	//encoding    []uint8
 	globalSubrs *cffINDEX
 	charset     []string
+	cids        []uint16 // CID-keyed charset, indexed by original glyph ID
 	charStrings *cffINDEX
 	fonts       *cffFontINDEX
 }
@@ -104,6 +105,10 @@ func (sfnt *SFNT) parseCFF() error {
 	}
 
 	var charset []string
+	var cids []uint16
+	if topDICT.IsCID {
+		cids = make([]uint16, charStringsINDEX.Len())
+	}
 	if topDICT.Charset < 3 {
 		if topDICT.Charset != 0 {
 			// 1 is Expert and 2 is ExpertSubset predefined glyph names
@@ -130,6 +135,9 @@ func (sfnt *SFNT) parseCFF() error {
 			for i := 1; i < numGlyphs; i++ {
 				sid := r.ReadUint16()
 				charset[i] = stringINDEX.GetSID(int(sid))
+				if cids != nil {
+					cids[i] = sid
+				}
 			}
 		case 1, 2:
 			for i := 1; i < numGlyphs; i++ {
@@ -148,6 +156,12 @@ func (sfnt *SFNT) parseCFF() error {
 				}
 				for j := 0; j < nLeft+1; j++ {
 					charset[i+j] = stringINDEX.GetSID(first + j)
+					if cids != nil {
+						if first+j > math.MaxUint16 {
+							return fmt.Errorf("CFF: CID charset overflow")
+						}
+						cids[i+j] = uint16(first + j)
+					}
 				}
 				i += nLeft
 			}
@@ -163,6 +177,7 @@ func (sfnt *SFNT) parseCFF() error {
 		//encoding:    encoding,
 		globalSubrs: globalSubrsINDEX,
 		charset:     charset,
+		cids:        cids,
 		charStrings: charStringsINDEX,
 	}
 
@@ -284,6 +299,34 @@ func (cff *cffTable) SetGlyphName(glyphID uint16, name string) {
 
 func (cff *cffTable) SetGlyphNames(names []string) {
 	cff.charset = names
+}
+
+// NumFontDicts returns the number of Private DICTs used by this CFF font.
+// Multi-DICT fonts need their original FDSelect and subroutines preserved when
+// a consumer does not support safe subsetting across Font DICTs.
+func (cff *cffTable) NumFontDicts() int {
+	if cff == nil || cff.fonts == nil {
+		return 0
+	}
+	return len(cff.fonts.private)
+}
+
+// CIDSystemInfo returns the ROS of a CID-keyed CFF font. ok is false for
+// name-keyed fonts, whose glyph IDs are used directly by OpenType consumers.
+func (cff *cffTable) CIDSystemInfo() (registry, ordering string, supplement int, ok bool) {
+	if cff == nil || cff.top == nil || !cff.top.IsCID {
+		return "", "", 0, false
+	}
+	return cff.top.ROS1, cff.top.ROS2, cff.top.ROS3, true
+}
+
+// GlyphCID returns the CID assigned to a glyph by the parsed CFF charset.
+// It is unrelated to the font's Unicode cmap and need not equal the glyph ID.
+func (cff *cffTable) GlyphCID(glyphID uint16) (uint16, bool) {
+	if cff == nil || int(glyphID) >= len(cff.cids) {
+		return 0, false
+	}
+	return cff.cids[glyphID], true
 }
 
 const (

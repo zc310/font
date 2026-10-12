@@ -189,6 +189,9 @@ func (sfnt *SFNT) Subset(glyphIDs []uint16, options SubsetOptions) (*SFNT, error
 				}
 				cff.charset = charset
 			}
+			// CFF.Write regenerates a subset charset; CID queries must describe
+			// those serialized bytes rather than the original glyph ordering.
+			cff.cids = nil
 
 			// CID fonts assign glyphs to Font DICTs through FDSelect; remap it to the
 			// subset glyph order so the subset font keeps the right Private DICTs.
@@ -216,6 +219,11 @@ func (sfnt *SFNT) Subset(glyphIDs []uint16, options SubsetOptions) (*SFNT, error
 			}
 			sfnt.Tables[tag] = b
 			sfnt.CFF = &cff
+			if cff.top != nil && cff.top.IsCID {
+				if err := sfnt.parseCFF(); err != nil {
+					return nil, err
+				}
+			}
 		case "glyf":
 			w := parse.NewBinaryWriter([]byte{})
 			for i, glyphID := range glyphIDs {
