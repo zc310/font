@@ -1615,19 +1615,32 @@ func (t *cffTopDICT) Write(strings *cffINDEX) ([]byte, error) {
 }
 
 type cffFontDICT struct {
-	PrivateOffset int
-	PrivateLength int
+	PrivateOffset  int
+	PrivateLength  int
+	FontMatrix     [6]float64
+	PaintType      int
+	CharstringType int
+	StrokeWidth    float64
 }
 
 func parseFontDICT(b []byte, isCFF2 bool) (*cffFontDICT, error) {
-	dict := &cffFontDICT{}
-	return dict, parseDICT(b, isCFF2, func(b0 int, is []int, fs []float64) bool {
+	dict := &cffFontDICT{FontMatrix: [6]float64{0.001, 0, 0, 0.001, 0, 0}}
+	err := parseDICT(b, isCFF2, func(b0 int, is []int, fs []float64) bool {
 		switch b0 {
 		case 18:
 			dict.PrivateOffset = is[1]
 			dict.PrivateLength = is[0]
 		case 256 + 7:
-			// FontMatrix
+			copy(dict.FontMatrix[:], fs)
+		case 256 + 5:
+			// PaintType controls glyph painting, not outline parsing.
+			dict.PaintType = is[0]
+		case 256 + 6:
+			// CID fonts use Type 2 CharStrings; the parser handles that format.
+			dict.CharstringType = is[0]
+		case 256 + 8:
+			// StrokeWidth does not affect outline parsing.
+			dict.StrokeWidth = fs[0]
 		case 256 + 38:
 			// FontName
 		default:
@@ -1635,6 +1648,7 @@ func parseFontDICT(b []byte, isCFF2 bool) (*cffFontDICT, error) {
 		}
 		return true
 	})
+	return dict, err
 }
 
 type cffPrivateDICT struct {
@@ -1696,6 +1710,8 @@ func parsePrivateDICT(b []byte, isCFF2 bool) (*cffPrivateDICT, error) {
 			dict.StemSnapV = append([]float64{}, fs...)
 		case 256 + 14:
 			dict.ForceBold = is[0] != 0
+		case 256 + 15, 256 + 16:
+			// Legacy Type 1 parameters do not affect Type 2 CharString parsing.
 		case 256 + 17:
 			dict.LanguageGroup = is[0]
 		case 256 + 18:
@@ -1848,7 +1864,7 @@ func parseDICT(b []byte, isCFF2 bool, callback func(b0 int, is []int, fs []float
 			reals = reals[:len(reals)-size]
 
 			if ok := callback(b0, is, fs); !ok {
-				return fmt.Errorf("bad operator")
+				return fmt.Errorf("bad operator: %d", b0)
 			}
 		} else if 22 <= b0 && b0 < 28 || b0 == 31 || b0 == 255 {
 			// reserved

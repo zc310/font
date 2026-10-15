@@ -7,9 +7,27 @@ import (
 	"github.com/tdewolff/test"
 )
 
-// TestCFFCIDMultiFDSubset 保护多 Font DICT（CID）CFF 的子集化：这类字体此前
-// 会因 "only single-font CFFs are supported" 失败，导致 PDF 无法嵌入字体、
-// 文字退化为矢量路径而不可复制。
+func TestParseCIDFontDICTLegacyOperators(t *testing.T) {
+	// Integer operands encode PaintType=2, CharstringType=2, and StrokeWidth=10.
+	dict, err := parseFontDICT([]byte{141, 12, 5, 141, 12, 6, 149, 12, 8, 139, 139, 18}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if dict.PrivateLength != 0 || dict.PrivateOffset != 0 {
+		t.Fatalf("private dict = (%d, %d), want (0, 0)", dict.PrivateLength, dict.PrivateOffset)
+	}
+	if dict.PaintType != 2 || dict.CharstringType != 2 || dict.StrokeWidth != 10 {
+		t.Fatalf("Font DICT operators = paint %d, charstring %d, stroke %g", dict.PaintType, dict.CharstringType, dict.StrokeWidth)
+	}
+
+	if _, err := parsePrivateDICT([]byte{139, 12, 15, 139, 12, 16}, false); err != nil {
+		t.Fatalf("legacy Type 1 private operators: %v", err)
+	}
+}
+
+// TestCFFCIDMultiFDSubset keeps subsetting working for CID CFF fonts with multiple
+// Font DICTs. These fonts previously failed with "only single-font CFFs are supported",
+// preventing PDF font embedding and turning text into non-copyable vector paths.
 func TestCFFCIDMultiFDSubset(t *testing.T) {
 	b, err := os.ReadFile("resources/cid-cff-subset.otf")
 	test.Error(t, err)
