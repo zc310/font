@@ -1,15 +1,15 @@
 module github.com/zc310/font/cmd/fontcmd
 
-go 1.26.4
+go 1.26.0
 
 replace github.com/zc310/font => ../..
 
 require (
 	github.com/tdewolff/argp v0.0.0-20260913163208-9b59948ed567
-	github.com/tdewolff/parse/v2 v2.8.16
+	github.com/tdewolff/parse/v2 v2.8.19
 	github.com/tdewolff/prompt v0.0.0-20260913164106-07d878231f26
-	github.com/zc310/canvas v0.0.0-20261012083747-2af41cda079e
-	github.com/zc310/font v0.0.0-20261012075210-d9401ca8d362
+	github.com/zc310/canvas v0.0.0-20261022020949-10c89b6dc7bf
+	github.com/zc310/font v0.0.0-20261015234500-7f44c41494e0
 	golang.org/x/image v0.47.0
 )
 
@@ -28,11 +28,12 @@ require (
 	github.com/go-text/typesetting v0.3.5 // indirect
 	github.com/golang/freetype v0.0.0-20170609003504-e2365dfdc4a0 // indirect
 	github.com/jmoiron/sqlx v1.4.0 // indirect
+	github.com/kr/text v0.2.0 // indirect
 	github.com/pelletier/go-toml v1.9.5 // indirect
 	github.com/srwiley/rasterx v0.0.0-20220730225603-2ab79fcdd4ef // indirect
 	github.com/srwiley/scanx v0.0.0-20190309010443-e94503791388 // indirect
-	github.com/tdewolff/minify/v2 v2.24.19 // indirect
-	github.com/yuin/goldmark v1.8.6 // indirect
+	github.com/tdewolff/minify/v2 v2.24.22 // indirect
+	github.com/yuin/goldmark/v2 v2.1.8 // indirect
 	golang.org/x/net v0.61.0 // indirect
 	golang.org/x/sys v0.49.0 // indirect
 	golang.org/x/text v0.43.0 // indirect
