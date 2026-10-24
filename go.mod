@@ -3,9 +3,9 @@ module github.com/zc310/font
 go 1.26.0
 
 require (
-	github.com/andybalholm/brotli v1.2.6
+	github.com/andybalholm/brotli v1.2.7
 	github.com/golang/freetype v0.0.0-20170609003504-e2365dfdc4a0
-	github.com/tdewolff/parse/v2 v2.8.19
+	github.com/tdewolff/parse/v2 v2.8.20
 	github.com/tdewolff/test v1.0.12
 	github.com/zc310/canvas v0.0.0-20261022020949-10c89b6dc7bf
 	golang.org/x/image v0.47.0
@@ -28,7 +28,7 @@ require (
 	github.com/kolesa-team/go-webp v1.0.5 // indirect
 	github.com/srwiley/rasterx v0.0.0-20220730225603-2ab79fcdd4ef // indirect
 	github.com/srwiley/scanx v0.0.0-20190309010443-e94503791388 // indirect
-	github.com/tdewolff/minify/v2 v2.24.22 // indirect
+	github.com/tdewolff/minify/v2 v2.24.23 // indirect
 	github.com/wcharczuk/go-chart/v2 v2.1.2 // indirect
 	github.com/yuin/goldmark/v2 v2.1.8 // indirect
 	golang.org/x/net v0.61.0 // indirect
