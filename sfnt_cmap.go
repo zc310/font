@@ -178,6 +178,7 @@ func (subtable *cmapFormat14) ToUnicode(glyphID uint16) []rune {
 func cmapWriteFormat4(w *parse.BinaryWriter, rs []rune, runeMap map[rune]uint16) {
 	// rs is sorted
 	data := cmapFormat4{}
+	glyphArraySegments := []bool{}
 	addSegment := func(firstCode, lastCode rune, glyphIDs []uint16, contiguous bool) {
 		data.EndCode = append(data.EndCode, uint16(lastCode))
 		data.StartCode = append(data.StartCode, uint16(firstCode))
@@ -192,12 +193,14 @@ func cmapWriteFormat4(w *parse.BinaryWriter, rs []rune, runeMap map[rune]uint16)
 			}
 			data.IdDelta = append(data.IdDelta, int16(delta))
 			data.IdRangeOffset = append(data.IdRangeOffset, 0)
+			glyphArraySegments = append(glyphArraySegments, false)
 		} else {
 			// use idRangeOffset
 			// set the value of IdRangeOffset to the offset in GlyphIdArray, updated below
 			data.IdDelta = append(data.IdDelta, 0)
 			data.IdRangeOffset = append(data.IdRangeOffset, uint16(len(data.GlyphIdArray)))
 			data.GlyphIdArray = append(data.GlyphIdArray, glyphIDs...)
+			glyphArraySegments = append(glyphArraySegments, true)
 		}
 	}
 
@@ -266,7 +269,7 @@ func cmapWriteFormat4(w *parse.BinaryWriter, rs []rune, runeMap map[rune]uint16)
 		w.WriteInt16(idDelta)
 	}
 	for i, idRangeOffset := range data.IdRangeOffset {
-		if data.IdDelta[i] != 0 {
+		if !glyphArraySegments[i] {
 			w.WriteUint16(0)
 		} else {
 			glyphIdArrayStart := uint16(len(data.IdRangeOffset) - i)
@@ -546,11 +549,11 @@ func (sfnt *SFNT) parseCmap() error {
 				for i := 0; i < int(segCount-1); i++ {
 					idRangeOffset := rs.ReadUint16()
 					if idRangeOffset%2 != 0 {
-						return fmt.Errorf("cmap: bad idRangeOffset in subtable %d", j)
+						return fmt.Errorf("cmap: odd idRangeOffset %d in subtable %d segment %d", idRangeOffset, j, i)
 					} else if idRangeOffset != 0 {
 						index := int(idRangeOffset/2) + int(subtable.EndCode[i]-subtable.StartCode[i]) - (int(segCount) - i)
 						if index < 0 || glyphIdArrayLength <= index {
-							return fmt.Errorf("cmap: bad idRangeOffset in subtable %d", j)
+							return fmt.Errorf("cmap: idRangeOffset %d in subtable %d segment %d reaches GlyphIdArray index %d (length %d)", idRangeOffset, j, i, index, glyphIdArrayLength)
 						}
 					}
 					subtable.IdRangeOffset[i] = idRangeOffset

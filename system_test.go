@@ -6,10 +6,10 @@ import (
 	"testing"
 )
 
-// TestGetSFNTMetadataUsesOS2Weight 保护“Arial Black 被误判为 Arial 常规”的回归。
-// ariblk.ttf 的 name 表把 subfamily 写成 "Regular"，只有读取 OS/2 的
-// usWeightClass(900) 才能与真正的 Arial 常规（400）区分开；否则系统字体匹配
-// 会用 Arial Black 覆盖 Arial 常规，导致文字被替换成更宽的字形而重叠。
+// TestGetSFNTMetadataUsesOS2Weight prevents Arial Black from being classified as
+// regular Arial. ariblk.ttf declares a Regular subfamily; its OS/2 usWeightClass
+// of 900 distinguishes it from regular Arial at 400. Misclassification would
+// replace regular Arial with wider glyphs and cause overlapping text.
 func TestGetSFNTMetadataUsesOS2Weight(t *testing.T) {
 	black := findSystemFontFile("ariblk.ttf")
 	regular := findSystemFontFile("arial.ttf")

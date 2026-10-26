@@ -593,8 +593,8 @@ func getSFNTMetadata(r io.ReadSeeker) (FontMetadata, error) {
 			return FontMetadata{}, fmt.Errorf("font family not found")
 		}
 
-		// OS/2 的 usWeightClass 与 fsSelection 比 subfamily 名称可靠（例如
-		// Arial Black 的 subfamily 写作 "Regular"，只有 OS/2 记录其 900）。
+		// OS/2 usWeightClass and fsSelection are more reliable than subfamily names:
+		// Arial Black uses the Regular subfamily but declares weight 900 in OS/2.
 		style := UnknownStyle
 		if os2Offset != 0 {
 			if _, err := r.Seek(int64(os2Offset), io.SeekStart); err == nil {
@@ -604,7 +604,7 @@ func getSFNTMetadata(r io.ReadSeeker) (FontMetadata, error) {
 					italic := fsSelection&0x0001 != 0
 					if 100 <= weight && weight <= 900 {
 						style = ParseStyleCSS(weight, italic)
-						// 少数字体 usWeightClass 偏低却置了 BOLD 位，以 BOLD 位兜底。
+						// Some fonts understate usWeightClass but set BOLD; use that bit as a fallback.
 						if fsSelection&0x0020 != 0 && style.Weight() < Bold {
 							style = style&Italic | Bold
 						}

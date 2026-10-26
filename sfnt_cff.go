@@ -903,18 +903,28 @@ func (cff *cffTable) updateSubrs(localSubrsMap, globalSubrsMap map[int32]int32, 
 	} else if len(localSubrsMap) == 0 && len(globalSubrsMap) == 0 {
 		return nil
 	}
+	return cff.updateSubrsByFont([]map[int32]int32{localSubrsMap}, globalSubrsMap, []*cffINDEX{localSubrs}, globalSubrs, []int{localSubrsLen}, globalSubrsLen)
+}
 
-	oldLocalSubrsLen := 0
-	if 0 < len(cff.fonts.localSubrs) {
-		oldLocalSubrsLen = cff.fonts.localSubrs[0].Len()
+// updateSubrsByFont rewrites subroutine references while preserving the
+// per-Font-DICT local subroutine indexes used by CID-keyed CFF fonts.
+func (cff *cffTable) updateSubrsByFont(localSubrsMaps []map[int32]int32, globalSubrsMap map[int32]int32, localSubrs []*cffINDEX, globalSubrs *cffINDEX, localSubrsLens []int, globalSubrsLen int) error {
+	if len(localSubrsMaps) != len(cff.fonts.localSubrs) || len(localSubrs) != len(cff.fonts.localSubrs) || len(localSubrsLens) != len(cff.fonts.localSubrs) {
+		return fmt.Errorf("local subroutine Font DICT count mismatch")
+	}
+	oldLocalSubrsLens := make([]int, len(cff.fonts.localSubrs))
+	localSubrsBiases := make([]int32, len(cff.fonts.localSubrs))
+	for i, subrs := range cff.fonts.localSubrs {
+		if subrs != nil {
+			oldLocalSubrsLens[i] = subrs.Len()
+		}
+		localSubrsBiases[i] = int32(cffCharStringSubrsBias(localSubrsLens[i]))
 	}
 	oldGlobalSubrsLen := cff.globalSubrs.Len()
-	oldLocalSubrsBias := int32(cffCharStringSubrsBias(oldLocalSubrsLen))
 	oldGlobalSubrsBias := int32(cffCharStringSubrsBias(oldGlobalSubrsLen))
 
-	localSubrsHandled := map[int32]bool{}  // old indices
-	globalSubrsHandled := map[int32]bool{} // old indices
-	localSubrsBias := int32(cffCharStringSubrsBias(localSubrsLen))
+	localSubrsHandled := make([]map[int32]bool, len(cff.fonts.localSubrs)) // old indexes per Font DICT
+	globalSubrsHandled := map[int32]bool{}                                 // old indices
 	globalSubrsBias := int32(cffCharStringSubrsBias(globalSubrsLen))
 
 	indexChanges := map[*cffINDEX][]cffSubrIndexChange{}
@@ -923,8 +933,14 @@ func (cff *cffTable) updateSubrs(localSubrsMap, globalSubrsMap map[int32]int32, 
 
 	numGlyphs := uint16(cff.charStrings.Len())
 	for glyphID := uint16(0); glyphID < numGlyphs; glyphID++ {
+		fontIndex, ok := cff.fonts.Index(uint32(glyphID))
+		if !ok || int(fontIndex) >= len(localSubrsMaps) {
+			return fmt.Errorf("CFF: invalid Font DICT index for glyph %d", glyphID)
+		}
+		localSubrsMap := localSubrsMaps[fontIndex]
+		localSubrsBias := localSubrsBiases[fontIndex]
 		// Change subroutine indices in the BinaryReader, this will make parseCharString use the
-		// new index to pick the right subroutine. localSubrs and globalSubrs must thus already
+		// new index to pick the right subroutine. Local/global subroutines must already
 		// have the new order/content.
 		skipDepth := 0
 		indexStack = append(indexStack[:0], cff.charStrings)
@@ -946,7 +962,7 @@ func (cff *cffTable) updateSubrs(localSubrsMap, globalSubrsMap map[int32]int32, 
 				var newIndex, newBias int32
 				if b0 == cffCallsubr {
 					if v, ok := localSubrsMap[oldIndex]; ok {
-						oldBias = oldLocalSubrsBias
+						oldBias = int32(cffCharStringSubrsBias(oldLocalSubrsLens[fontIndex]))
 						newIndex = v
 						newBias = localSubrsBias
 						mapped = true
@@ -960,7 +976,7 @@ func (cff *cffTable) updateSubrs(localSubrsMap, globalSubrsMap map[int32]int32, 
 					}
 				}
 
-				if skipDepth == 0 && mapped && oldIndex != newIndex {
+				if skipDepth == 0 && mapped && oldIndex-oldBias != newIndex-newBias {
 					lenNumber := uint32(cffNumberSize(int(oldIndex - oldBias)))
 					posNumber := uint32(r.Pos()) - 1 - lenNumber // -1 as we're past the operator
 
@@ -978,11 +994,14 @@ func (cff *cffTable) updateSubrs(localSubrsMap, globalSubrsMap map[int32]int32, 
 					skipDepth++
 					return nil
 				} else if b0 == cffCallsubr {
-					if localSubrsHandled[oldIndex] {
+					if localSubrsHandled[fontIndex] == nil {
+						localSubrsHandled[fontIndex] = make(map[int32]bool)
+					}
+					if localSubrsHandled[fontIndex][oldIndex] {
 						skipDepth++
 						return nil
 					} else {
-						localSubrsHandled[oldIndex] = true
+						localSubrsHandled[fontIndex][oldIndex] = true
 					}
 				} else {
 					if globalSubrsHandled[oldIndex] {
@@ -995,7 +1014,7 @@ func (cff *cffTable) updateSubrs(localSubrsMap, globalSubrsMap map[int32]int32, 
 
 				var index *cffINDEX
 				if b0 == cffCallsubr {
-					index = localSubrs
+					index = localSubrs[fontIndex]
 				} else {
 					index = globalSubrs
 				}
@@ -1070,17 +1089,15 @@ func (cff *cffTable) updateSubrs(localSubrsMap, globalSubrsMap map[int32]int32, 
 		index.data = data
 	}
 
-	// set new Subrs INDEX, charStrings already modified
+	// Set new subroutine indexes; charStrings already contain their new references.
 	cff.globalSubrs = globalSubrs
-
-	// copy pointers in fonts
 	fonts := *cff.fonts
 	cff.fonts = &fonts
-	cff.fonts.localSubrs = []*cffINDEX{localSubrs}
+	cff.fonts.localSubrs = localSubrs
 	return nil
 }
 
-// hasSubrs 判断字体的全局或任意 Local Subrs INDEX 是否非空。
+// hasSubrs reports whether the global or any local subroutine INDEX is nonempty.
 func (cff *cffTable) hasSubrs() bool {
 	if cff.globalSubrs != nil && cff.globalSubrs.Len() > 0 {
 		return true
@@ -1098,16 +1115,23 @@ func (cff *cffTable) ReindexSubrs() error {
 	if !cff.hasSubrs() {
 		return nil
 	}
-	if 1 < len(cff.fonts.localSubrs) {
-		return fmt.Errorf("only single-font CFFs are supported")
+	if len(cff.fonts.localSubrs) > 1 && cff.globalSubrsCallLocalSubrs() {
+		// A shared Global Subr resolves callsubr against its caller's Font DICT.
+		// Reindexing that Local Subr differently per FD would change shared code
+		// semantics, so retain the original subroutine indexes for this font.
+		return nil
 	}
 
 	// find used subroutines
 	skipDepth := 0
 	numGlyphs := uint16(cff.charStrings.Len())
-	localSubrsIndices := []int32{}
-	localSubrsData := map[int32][]byte{}
-	localSubrsCount := map[int32]int{}
+	localSubrsIndices := make([][]int32, len(cff.fonts.localSubrs))
+	localSubrsData := make([]map[int32][]byte, len(cff.fonts.localSubrs))
+	localSubrsCount := make([]map[int32]int, len(cff.fonts.localSubrs))
+	for i := range cff.fonts.localSubrs {
+		localSubrsData[i] = make(map[int32][]byte)
+		localSubrsCount[i] = make(map[int32]int)
+	}
 	globalSubrsIndices := []int32{}
 	globalSubrsData := map[int32][]byte{}
 	globalSubrsCount := map[int32]int{}
@@ -1127,11 +1151,15 @@ func (cff *cffTable) ReindexSubrs() error {
 					return err
 				}
 				if b0 == cffCallsubr {
-					if _, ok := localSubrsCount[index]; !ok {
-						localSubrsIndices = append(localSubrsIndices, index)
-						localSubrsData[index] = subr
+					fontIndex, ok := cff.fonts.Index(uint32(glyphID))
+					if !ok || int(fontIndex) >= len(localSubrsCount) {
+						return fmt.Errorf("CFF: invalid Font DICT index for glyph %d", glyphID)
 					}
-					localSubrsCount[index] = localSubrsCount[index] + 1
+					if _, ok := localSubrsCount[fontIndex][index]; !ok {
+						localSubrsIndices[fontIndex] = append(localSubrsIndices[fontIndex], index)
+						localSubrsData[fontIndex][index] = subr
+					}
+					localSubrsCount[fontIndex][index]++
 				} else {
 					if _, ok := globalSubrsCount[index]; !ok {
 						globalSubrsIndices = append(globalSubrsIndices, index)
@@ -1152,27 +1180,37 @@ func (cff *cffTable) ReindexSubrs() error {
 	}
 
 	// sort descending
-	sort.SliceStable(localSubrsIndices, func(i, j int) bool {
-		return localSubrsCount[localSubrsIndices[j]] < localSubrsCount[localSubrsIndices[i]]
-	})
+	for fontIndex := range localSubrsIndices {
+		counts := localSubrsCount[fontIndex]
+		sort.SliceStable(localSubrsIndices[fontIndex], func(i, j int) bool {
+			return counts[localSubrsIndices[fontIndex][j]] < counts[localSubrsIndices[fontIndex][i]]
+		})
+	}
 	sort.SliceStable(globalSubrsIndices, func(i, j int) bool {
 		return globalSubrsCount[globalSubrsIndices[j]] < globalSubrsCount[globalSubrsIndices[i]]
 	})
 
 	// construct subroutine index mapping
-	localSubrs := &cffINDEX{}          // new INDEX
-	globalSubrs := &cffINDEX{}         // new INDEX
-	var localSubrsMap map[int32]int32  // old to new index
-	var globalSubrsMap map[int32]int32 // old to new index
-	if 0 < len(localSubrsIndices) {
-		localSubrsMap = map[int32]int32{}
+	localSubrs := make([]*cffINDEX, len(cff.fonts.localSubrs))
+	globalSubrs := &cffINDEX{}                                           // new INDEX
+	localSubrsMaps := make([]map[int32]int32, len(cff.fonts.localSubrs)) // old to new index per Font DICT
+	var globalSubrsMap map[int32]int32                                   // old to new index
+	localSubrsLens := make([]int, len(cff.fonts.localSubrs))
+	for i := range localSubrs {
+		localSubrs[i] = &cffINDEX{}
+		if 0 < len(localSubrsIndices[i]) {
+			localSubrsMaps[i] = map[int32]int32{}
+		}
 	}
 	if 0 < len(globalSubrsIndices) {
 		globalSubrsMap = map[int32]int32{}
 	}
-	for _, oldIndex := range localSubrsIndices {
-		newIndex := localSubrs.Add(localSubrsData[oldIndex]) // copies data
-		localSubrsMap[oldIndex] = int32(newIndex)
+	for fontIndex, indices := range localSubrsIndices {
+		for _, oldIndex := range indices {
+			newIndex := localSubrs[fontIndex].Add(localSubrsData[fontIndex][oldIndex]) // copies data
+			localSubrsMaps[fontIndex][oldIndex] = int32(newIndex)
+		}
+		localSubrsLens[fontIndex] = localSubrs[fontIndex].Len()
 	}
 	for _, oldIndex := range globalSubrsIndices {
 		newIndex := globalSubrs.Add(globalSubrsData[oldIndex]) // copies data
@@ -1180,7 +1218,37 @@ func (cff *cffTable) ReindexSubrs() error {
 	}
 
 	// update subrs indices in charStrings for all glyphs and their subroutines
-	return cff.updateSubrs(localSubrsMap, globalSubrsMap, localSubrs, globalSubrs, localSubrs.Len(), globalSubrs.Len())
+	return cff.updateSubrsByFont(localSubrsMaps, globalSubrsMap, localSubrs, globalSubrs, localSubrsLens, globalSubrs.Len())
+}
+
+func (cff *cffTable) globalSubrsCallLocalSubrs() bool {
+	for glyphID := uint16(0); glyphID < uint16(cff.charStrings.Len()); glyphID++ {
+		var calls []bool
+		found := false
+		_ = cff.parseCharString(glyphID, func(_ *parse.BinaryReader, operator int32, _ []int32) error {
+			switch operator {
+			case cffCallsubr:
+				for _, global := range calls {
+					if global {
+						found = true
+						break
+					}
+				}
+				calls = append(calls, false)
+			case cffCallgsubr:
+				calls = append(calls, true)
+			case cffReturn:
+				if len(calls) > 0 {
+					calls = calls[:len(calls)-1]
+				}
+			}
+			return nil
+		})
+		if found {
+			return true
+		}
+	}
+	return false
 }
 
 type cffINDEX struct {
@@ -2225,27 +2293,35 @@ func (cff *cffTable) Write() ([]byte, error) {
 	var charset *parse.BinaryWriter
 	numGlyphs := cff.charStrings.Len()
 	names := cff.charset
-	if names == nil && 229 < numGlyphs {
-		// 未提供字形名（如 canvas 为压缩体积调用 SetGlyphNames(nil)）且字形数
-		// 超出 charset format 0 的可表示范围时，生成占位字形名，保证 CFF 的
-		// charset 结构完整可写出。PDF 嵌入依赖 CIDToGIDMap 与 charstrings，
-		// 不依赖真实字形名；此前这里直接报错，导致内嵌 CFF 子集化失败、文字
-		// 退化为矢量轮廓而不可复制。
+	if !cff.top.IsCID && names == nil && 229 < numGlyphs {
+		// Generate placeholder names when callers clear glyph names for compact
+		// embedding and the font exceeds the predefined charset. This keeps the
+		// serialized charset valid without requiring the original glyph names.
 		names = make([]string, numGlyphs)
 		names[0] = ".notdef"
 		for i := 1; i < numGlyphs; i++ {
 			names[i] = "gid" + strconv.Itoa(i)
 		}
 	}
-	if names != nil {
+	if names != nil || cff.top.IsCID {
 		// TODO: reorder entries in charString sequentially to make this smaller
-		if len(names) != numGlyphs {
-			return nil, fmt.Errorf("charset length must match number of glyphs")
-		}
-
 		sids := make([]int, numGlyphs-1)
-		for i, name := range names[1:numGlyphs] {
-			sids[i] = strings.AddSID([]byte(name))
+		if cff.top.IsCID {
+			// Adobe 5176 sections 13 and 18 require numeric CIDs in CID-keyed charsets.
+			// Routing them through String INDEX merges unnamed high CIDs into one SID.
+			if len(cff.cids) != numGlyphs || cff.cids[0] != 0 {
+				return nil, fmt.Errorf("CID charset length or .notdef CID is invalid")
+			}
+			for i, cid := range cff.cids[1:] {
+				sids[i] = int(cid)
+			}
+		} else {
+			if len(names) != numGlyphs {
+				return nil, fmt.Errorf("charset length must match number of glyphs")
+			}
+			for i, name := range names[1:numGlyphs] {
+				sids[i] = strings.AddSID([]byte(name))
+			}
 		}
 
 		// count number of ranges and max values of nLeft
@@ -2374,7 +2450,7 @@ func (cff *cffTable) Write() ([]byte, error) {
 	} else if privateDICT != nil {
 		lenTopDICT += 1 + cffDICTIntegerSize(len(privateDICT)) // key and size
 	}
-	lenTopDICTINDEXOffSize := cffINDEXOffSize(lenTopDICT)
+	lenTopDICTINDEXOffSize := cffINDEXOffSize(lenTopDICT + 1)
 	lenTopDICTINDEX := 3 + 2*lenTopDICTINDEXOffSize + lenTopDICT
 
 	offset := int(w.Len()) + lenTopDICTINDEX + len(stringINDEX) // no overflow
@@ -2417,22 +2493,27 @@ func (cff *cffTable) Write() ([]byte, error) {
 		privateOffset = charStringsOffset + len(charStringsINDEX)
 	}
 
-	// correct for offset calculated above (grow Top DICT)
-	correct, prevCorrect := 0, -1
-	for correct != prevCorrect {
-		prevCorrect = correct
-		correct = 0
+	// All offsets shift by the complete Top DICT growth. Evaluate each operand
+	// against the same previous shift until the serialized length is stable.
+	correct := 0
+	for {
+		operandLength := 0
 		if charset != nil {
-			correct += cffDICTIntegerSize(charsetOffset + correct) // integer length in DICT
+			operandLength += cffDICTIntegerSize(charsetOffset + correct)
 		}
-		correct += cffDICTIntegerSize(charStringsOffset + correct) // integer length in DICT
+		operandLength += cffDICTIntegerSize(charStringsOffset + correct)
 		if isCID {
-			correct += cffDICTIntegerSize(fdArrayOffset + correct)
-			correct += cffDICTIntegerSize(fdSelectOffset + correct)
+			operandLength += cffDICTIntegerSize(fdArrayOffset + correct)
+			operandLength += cffDICTIntegerSize(fdSelectOffset + correct)
 		} else if privateDICT != nil {
-			correct += cffDICTIntegerSize(privateOffset + correct) // integer length in DICT
+			operandLength += cffDICTIntegerSize(privateOffset + correct)
 		}
-		correct += cffINDEXOffSize(lenTopDICT+correct) - lenTopDICTINDEXOffSize // offSize in INDEX
+		// A single-item INDEX has two one-based offsets; both grow with offSize.
+		next := operandLength + 2*(cffINDEXOffSize(lenTopDICT+operandLength+1)-lenTopDICTINDEXOffSize)
+		if next == correct {
+			break
+		}
+		correct = next
 	}
 	charsetOffset += correct
 	charStringsOffset += correct
@@ -2509,7 +2590,7 @@ func (cff *cffTable) Write() ([]byte, error) {
 	return w.Bytes(), nil
 }
 
-// buildPrivateDICT 序列化一个 Private DICT，并在存在 Local Subrs INDEX 时写入其相对偏移。
+// buildPrivateDICT serializes a Private DICT and its relative Local Subrs offset, if present.
 func buildPrivateDICT(private *cffPrivateDICT, localSubrs []*cffINDEX, index int) ([]byte, error) {
 	var privateDICT []byte
 	var err error
@@ -2529,14 +2610,14 @@ func buildPrivateDICT(private *cffPrivateDICT, localSubrs []*cffINDEX, index int
 	return privateDICT, nil
 }
 
-// writeFontDICT 序列化 FDArray 中指向 Private DICT 的 Font DICT。
+// writeFontDICT serializes an FDArray Font DICT referencing a Private DICT.
 func writeFontDICT(privateOffset, privateLength int) []byte {
 	w := parse.NewBinaryWriter([]byte{})
 	writeDICTEntry(w, 18, privateLength, privateOffset)
 	return w.Bytes()
 }
 
-// writeFDSelect 以 format 3 写出字形到 Font DICT 的映射。
+// writeFDSelect writes the glyph-to-Font-DICT mapping in format 3.
 func writeFDSelect(fonts *cffFontINDEX, numGlyphs int) []byte {
 	w := parse.NewBinaryWriter([]byte{})
 	w.WriteUint8(3)
